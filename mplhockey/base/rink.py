@@ -177,6 +177,7 @@ class Rink:
         self._ice_copy = ice_copy
         boards_copy.set_transform(scale + rotate + boards_copy.get_transform())
         ice_copy.set_transform(scale + rotate + ice_copy.get_transform())
+        ice_copy.set_zorder(-np.inf)
 
         # Draw and crop features
         for feature in self.ice_features.values():
@@ -229,9 +230,20 @@ class Rink:
 
     def transform_xy(self, x, y, rotation=None, units=None):
         T = self._data_transform(rotation=rotation, units=units)
-        xy = np.column_stack([np.asarray(x), np.asarray(y)])
+
+        # 1. Convert to numpy arrays and save the original shape
+        x_arr = np.asarray(x)
+        y_arr = np.asarray(y)
+        original_shape = x_arr.shape
+
+        # 2. Flatten (.ravel()) to 1D before stacking so it always forms an (N, 2) array
+        xy = np.column_stack([x_arr.ravel(), y_arr.ravel()])
+
+        # 3. Apply the transform
         xy_t = T.transform(xy)
-        return xy_t[:, 0], xy_t[:, 1]
+
+        # 4. Reshape the 1D transformed arrays back to the original 2D (or 1D) shape
+        return xy_t[:, 0].reshape(original_shape), xy_t[:, 1].reshape(original_shape)
 
     def scatter(self, x, y, *args, rotation=None, units=None, ax=None, **kwargs):
         fig, ax = self._gca(ax=ax, make_3d=False)
@@ -241,6 +253,7 @@ class Rink:
 
     def hexbin(self, x, y, *args, rotation=None, units=None, ax=None, **kwargs):
         fig, ax = self._gca(ax=ax, make_3d=False)
+        kwargs.setdefault("zorder", 0)  # Ensure contour is below other features
         x_t, y_t = self.transform_xy(x, y, rotation=rotation, units=units)
         hb = ax.hexbin(x_t, y_t, *args, **kwargs)
 
@@ -249,6 +262,42 @@ class Rink:
             hb.set_clip_path(self._ice_copy)
 
         return hb
+
+    def contour(self, x, y, z, *args, rotation=None, units=None, ax=None, **kwargs):
+        fig, ax = self._gca(ax=ax, make_3d=False)
+        kwargs.setdefault("zorder", 0)  # Ensure contour is below other features
+
+        x_t, y_t = self.transform_xy(x, y, rotation=rotation, units=units)
+
+        # z is now explicitly passed here
+        cs = ax.contour(x_t, y_t, z, *args, **kwargs)
+
+        _ice_copy = getattr(self, "_ice_copy", None)
+        if _ice_copy:
+            if hasattr(cs, "set_clip_path"):
+                cs.set_clip_path(_ice_copy)
+            else:
+                for collection in cs.collections:
+                    collection.set_clip_path(_ice_copy)
+
+        return cs
+
+    def contourf(self, x, y, z, *args, rotation=None, units=None, ax=None, **kwargs):
+        fig, ax = self._gca(ax=ax, make_3d=False)
+        kwargs.setdefault("zorder", 0)  # Ensure contour is below other features
+
+        x_t, y_t = self.transform_xy(x, y, rotation=rotation, units=units)
+        cs = ax.contourf(x_t, y_t, z, *args, **kwargs)
+
+        _ice_copy = getattr(self, "_ice_copy", None)
+        if _ice_copy:
+            if hasattr(cs, "set_clip_path"):
+                cs.set_clip_path(_ice_copy)
+            else:
+                for collection in cs.collections:
+                    collection.set_clip_path(_ice_copy)
+
+        return cs
 
     def plot(self, x, y, *args, rotation=None, units=None, ax=None, **kwargs):
         fig, ax = self._gca(ax=ax, make_3d=False)
